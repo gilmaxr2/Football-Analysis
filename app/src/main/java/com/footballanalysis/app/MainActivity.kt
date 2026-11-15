@@ -61,7 +61,43 @@ class MainActivity : Activity() {
         root.addView(header)
         val middle = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val tools = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(panel) }
-        fun tool(name:String, mode:Mode) { tools.addView(action(name.substringBefore(" ").trim()) {
+        val tacticalButtons = mutableListOf<TacticalButton>()
+
+        fun tool(name: String, mode: Mode) {
+            val symbol = name.substringBefore(" ")
+
+            lateinit var button: TacticalButton
+
+            button = TacticalButton(
+                this,
+                symbol,
+                name
+            ) {
+                editor.mode = mode
+                tacticalButtons.forEach {
+                    it.selectedTool = false
+                }
+                button.selectedTool = true
+                status.text = "Ferramenta: $name"
+            }
+
+            tacticalButtons.add(button)
+
+            tools.addView(
+                button,
+                LinearLayout.LayoutParams(
+                    dp(36),
+                    dp(36)
+                ).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    bottomMargin = dp(4)
+                }
+            )
+
+            if (mode == Mode.ARROW) {
+                button.selectedTool = true
+            }
+        }
             editor.mode = mode
             status.text = "Ferramenta: $name"
         }) }
