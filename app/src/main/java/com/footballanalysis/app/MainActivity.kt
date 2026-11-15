@@ -105,6 +105,8 @@ class MainActivity : Activity() {
         tool("▭ Retângulo", Mode.RECTANGLE)
         tool("▧ Zona", Mode.ZONE)
         tool("┃ Impedimento", Mode.OFFSIDE)
+        tool("◎ Jogador", Mode.PLAYER)
+        tool("⌁ Conectar", Mode.CONNECT)
         tools.addView(action("ⓘ Ajuda") { toast("Selecione uma ferramenta e desenhe sobre o quadro congelado.") })
         middle.addView(tools, LinearLayout.LayoutParams(dp(48), -1))
         frameArea = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
@@ -277,21 +279,66 @@ class MainActivity : Activity() {
     override fun onDestroy() { handler.removeCallbacks(ticker); if(::video.isInitialized) video.stopPlayback(); super.onDestroy() }
 }
 
-enum class Mode { ARROW, CIRCLE, LINE, DASHED, RECTANGLE, ZONE, OFFSIDE }
+enum class Mode { ARROW, CIRCLE, LINE, DASHED, RECTANGLE, ZONE, OFFSIDE, PLAYER, CONNECT }
 data class Stroke(val mode: Mode, val start: PointF, val end: PointF)
 
 class EditorView(context: android.content.Context) : View(context) {
     var mode: Mode = Mode.ARROW
+        set(value) {
+            field = value
+            connectionStart = null
+            invalidate()
+        }
     private var source: Bitmap? = null
     private val strokes = mutableListOf<Stroke>()
     private val redoStrokes = mutableListOf<Stroke>()
     var onHistoryChanged: ((Boolean, Boolean) -> Unit)? = null
     private fun notifyHistory() { onHistoryChanged?.invoke(strokes.isNotEmpty(), redoStrokes.isNotEmpty()) }
     private var active: Stroke? = null
+    private var connectionStart: PointF? = null
+
+    private fun nearestPlayer(p: PointF): PointF? {
+        val players = strokes.filter { it.mode == Mode.PLAYER }
+        return players.map { it.start }
+            .filter {
+                val dx = it.x - p.x
+                val dy = it.y - p.y
+                dx * dx + dy * dy < 0.0025f
+            }
+            .minByOrNull {
+                val dx = it.x - p.x
+                val dy = it.y - p.y
+                dx * dx + dy * dy
+            }
+    }
+
+    private fun addTacticalPoint(p: PointF) {
+        if (mode == Mode.PLAYER) {
+            val existing = nearestPlayer(p)
+            if (existing == null) {
+                strokes.add(Stroke(Mode.PLAYER, p, p))
+                redoStrokes.clear()
+            }
+        } else if (mode == Mode.CONNECT) {
+            val player = nearestPlayer(p) ?: return
+            val first = connectionStart
+            if (first == null) {
+                connectionStart = player
+            } else {
+                if (first != player) {
+                    strokes.add(Stroke(Mode.CONNECT, first, player))
+                    redoStrokes.clear()
+                }
+                connectionStart = null
+            }
+        }
+        invalidate()
+        notifyHistory()
+    }
     private val pen = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(255, 213, 67); strokeWidth = 6f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
     private val imagePaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val rect = RectF()
-    fun setImage(bmp: Bitmap) { source = bmp; strokes.clear(); redoStrokes.clear(); active = null; invalidate(); notifyHistory() }
+    fun setImage(bmp: Bitmap) { source = bmp; strokes.clear(); redoStrokes.clear(); active = null; connectionStart = null; invalidate(); notifyHistory() }
     fun undo() {
         if (strokes.isNotEmpty()) {
             redoStrokes.add(strokes.removeAt(strokes.lastIndex))
@@ -327,6 +374,27 @@ class EditorView(context: android.content.Context) : View(context) {
     private fun drawStroke(c: Canvas, s: Stroke, dst: RectF) {
         val x1 = dst.left + s.start.x * dst.width(); val y1 = dst.top + s.start.y * dst.height()
         val x2 = dst.left + s.end.x * dst.width(); val y2 = dst.top + s.end.y * dst.height()
+        if (s.mode == Mode.PLAYER) {
+            val oldColor = pen.color
+            val oldWidth = pen.strokeWidth
+            pen.color = Color.rgb(205, 35, 45)
+            pen.strokeWidth = max(3f, dst.width() * 0.005f)
+            c.drawOval(x1 - 19f, y1 - 7f, x1 + 19f, y1 + 7f, pen)
+            c.drawOval(x1 - 10f, y1 - 4f, x1 + 10f, y1 + 4f, pen)
+            pen.color = oldColor
+            pen.strokeWidth = oldWidth
+            return
+        }
+        if (s.mode == Mode.CONNECT) {
+            val oldColor = pen.color
+            val oldWidth = pen.strokeWidth
+            pen.color = Color.rgb(205, 35, 45)
+            pen.strokeWidth = max(3f, dst.width() * 0.004f)
+            c.drawLine(x1, y1, x2, y2, pen)
+            pen.color = oldColor
+            pen.strokeWidth = oldWidth
+            return
+        }
         if (s.mode == Mode.RECTANGLE || s.mode == Mode.ZONE) {
             val oldStyle = pen.style
             if (s.mode == Mode.ZONE) {
@@ -358,8 +426,23 @@ class EditorView(context: android.content.Context) : View(context) {
         val b = bounds()
         val p = PointF(((event.x - b.left) / b.width()).coerceIn(0f,1f), ((event.y - b.top) / b.height()).coerceIn(0f,1f))
         when(event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { if (!b.contains(event.x,event.y)) return false; active = Stroke(mode,p,p); invalidate(); return true }
-            MotionEvent.ACTION_MOVE -> { active = active?.copy(end=p); invalidate(); return true }
+            MotionEvent.ACTION_DOWN -> {
+                if (!b.contains(event.x,event.y)) return false
+                if (mode == Mode.PLAYER || mode == Mode.CONNECT) {
+                    addTacticalPoint(p)
+                    return true
+                }
+                connectionStart = null
+                active = Stroke(mode,p,p)
+                invalidate()
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (mode == Mode.PLAYER || mode == Mode.CONNECT) return true
+                active = active?.copy(end=p)
+                invalidate()
+                return true
+            }
             MotionEvent.ACTION_UP -> { active?.let {
                 strokes.add(it.copy(end=p))
                 redoStrokes.clear()
