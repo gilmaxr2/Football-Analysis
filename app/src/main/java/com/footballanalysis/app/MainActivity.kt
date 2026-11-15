@@ -34,9 +34,9 @@ class MainActivity : Activity() {
     private var frameRate = 30.0
     private var imageLoaded = false
     private val handler = Handler(Looper.getMainLooper())
-    private val bg = Color.rgb(11, 19, 17)
-    private val panel = Color.rgb(24, 36, 32)
-    private val green = Color.rgb(76, 222, 139)
+    private val bg = Color.rgb(17, 27, 36)
+    private val panel = Color.rgb(32, 49, 62)
+    private val green = Color.rgb(106, 172, 201)
     private val ticker = object : Runnable {
         override fun run() {
             if (::video.isInitialized && videoUri != null && !frozen && !seeking) {
@@ -61,12 +61,19 @@ class MainActivity : Activity() {
         root.addView(header)
         val middle = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val tools = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(panel) }
-        fun tool(name:String, mode:Mode) { tools.addView(action(name) { editor.mode = mode; status.text = "Ferramenta: $name" }) }
+        fun tool(name:String, mode:Mode) { tools.addView(action(name.substringBefore(" ").trim()) {
+            editor.mode = mode
+            status.text = "Ferramenta: $name"
+        }) }
         tool("↗ Seta", Mode.ARROW)
         tool("━ Linha", Mode.LINE)
         tool("◯ Círculo", Mode.CIRCLE)
+        tool("┄ Pontilhada", Mode.DASHED)
+        tool("▭ Retângulo", Mode.RECTANGLE)
+        tool("▧ Zona", Mode.ZONE)
+        tool("┃ Impedimento", Mode.OFFSIDE)
         tools.addView(action("ⓘ Ajuda") { toast("Selecione uma ferramenta e desenhe sobre o quadro congelado.") })
-        middle.addView(tools, LinearLayout.LayoutParams(dp(104), -1))
+        middle.addView(tools, LinearLayout.LayoutParams(dp(48), -1))
         frameArea = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         video = VideoView(this).apply { visibility = View.GONE; setOnCompletionListener { play.text = "▶"; positionMs = durationMs; refreshTime() } }
         editor = EditorView(this)
@@ -130,7 +137,10 @@ class MainActivity : Activity() {
         text=s; textSize=size; setTextColor(color); setPadding(dp(9),dp(7),dp(9),dp(7)); gravity=Gravity.CENTER_VERTICAL
     }
     private fun action(s:String, f:()->Unit) = Button(this).apply {
-        text=s; textSize=11f; isAllCaps=false; minHeight=0; minimumHeight=0
+        text=s; textSize=11f; isAllCaps=false
+        minHeight=0; minimumHeight=0
+        minWidth=0; minimumWidth=0
+        setPadding(dp(3),dp(2),dp(3),dp(2))
         setTextColor(Color.WHITE); setBackgroundTintList(android.content.res.ColorStateList.valueOf(panel))
         setOnClickListener { f() }
     }
@@ -234,7 +244,7 @@ class MainActivity : Activity() {
     override fun onDestroy() { handler.removeCallbacks(ticker); if(::video.isInitialized) video.stopPlayback(); super.onDestroy() }
 }
 
-enum class Mode { ARROW, CIRCLE, LINE }
+enum class Mode { ARROW, CIRCLE, LINE, DASHED, RECTANGLE, ZONE, OFFSIDE }
 data class Stroke(val mode: Mode, val start: PointF, val end: PointF)
 
 class EditorView(context: android.content.Context) : View(context) {
@@ -284,8 +294,26 @@ class EditorView(context: android.content.Context) : View(context) {
     private fun drawStroke(c: Canvas, s: Stroke, dst: RectF) {
         val x1 = dst.left + s.start.x * dst.width(); val y1 = dst.top + s.start.y * dst.height()
         val x2 = dst.left + s.end.x * dst.width(); val y2 = dst.top + s.end.y * dst.height()
+        if (s.mode == Mode.RECTANGLE || s.mode == Mode.ZONE) {
+            val oldStyle = pen.style
+            if (s.mode == Mode.ZONE) {
+                pen.style = Paint.Style.FILL
+                pen.alpha = 65
+            }
+            c.drawRect(min(x1,x2), min(y1,y2),
+                max(x1,x2), max(y1,y2), pen)
+            pen.style = oldStyle
+            pen.alpha = 255
+            return
+        }
         if (s.mode == Mode.CIRCLE) { c.drawOval(min(x1,x2),min(y1,y2),max(x1,x2),max(y1,y2),pen); return }
-        c.drawLine(x1,y1,x2,y2,pen)
+        if (s.mode == Mode.DASHED)
+            pen.pathEffect = DashPathEffect(floatArrayOf(18f, 12f), 0f)
+        if (s.mode == Mode.OFFSIDE)
+            c.drawLine(x1, dst.top, x1, dst.bottom, pen)
+        else
+            c.drawLine(x1,y1,x2,y2,pen)
+        pen.pathEffect = null
         if (s.mode == Mode.ARROW) {
             val a = atan2(y2-y1,x2-x1); val len = max(14f, dst.width() * .025f)
             c.drawLine(x2,y2,x2-len*cos(a-.55f),y2-len*sin(a-.55f),pen)
