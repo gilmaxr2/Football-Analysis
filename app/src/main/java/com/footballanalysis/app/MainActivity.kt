@@ -98,9 +98,6 @@ class MainActivity : Activity() {
                 button.selectedTool = true
             }
         }
-            editor.mode = mode
-            status.text = "Ferramenta: $name"
-        }) }
         tool("↗ Seta", Mode.ARROW)
         tool("━ Linha", Mode.LINE)
         tool("◯ Círculo", Mode.CIRCLE)
