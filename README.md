@@ -37,3 +37,8 @@ O projeto foi inspecionado estaticamente, mas não compilado neste ambiente. O G
 
 ## Nota
 A linha de impedimento futura será uma estimativa tática, não uma decisão oficial de VAR.
+
+## Versão 0.2
+- Botões Desfazer e Refazer com ícones espelhados (↶ / ↷).
+- Histórico de marcações com refazer, limpeza após nova edição e botões desabilitados quando indisponíveis.
+- Interface definitiva do modelo 10 e funcionalidades avançadas de IA/exportação MP4 ainda pendentes; não declarar prontas.
